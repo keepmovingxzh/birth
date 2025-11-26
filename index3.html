@@ -2,78 +2,104 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>magic</title>
+    <title>手势控制星云 - 终极可视化版</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Microsoft YaHei', sans-serif; }
         
-        /* 容器样式 */
+        /* 3D 场景容器 */
         #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
-        #video-container { position: absolute; bottom: 20px; right: 20px; z-index: 2; width: 320px; height: 240px; border-radius: 10px; overflow: hidden; border: 2px solid rgba(255,255,255,0.3); transform: scaleX(-1); opacity: 0.6; transition: opacity 0.3s; }
-        #video-container:hover { opacity: 1; }
-        video { width: 100%; height: 100%; object-fit: cover; }
+        
+        /* 视频和可视化容器 (右下角) */
+        #camera-wrapper {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 320px;
+            height: 240px;
+            z-index: 100;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid rgba(255,255,255,0.3);
+            background: rgba(0,0,0,0.5);
+            transform: scaleX(-1); /* 镜像翻转，让操作符合直觉 */
+        }
+
+        /* 原始视频元素 (隐藏，只用作数据源) */
+        .input_video { display: none; }
+
+        /* 绘制骨架的 Canvas */
+        .output_canvas {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
         
         /* 提示和加载文字 */
-        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 24px; pointer-events: none; z-index: 10; }
-        .instruction { position: absolute; top: 20px; left: 20px; color: rgba(255,255,255,0.6); z-index: 3; pointer-events: none; text-shadow: 0 0 5px #000; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 24px; pointer-events: none; z-index: 10; text-align: center; }
+        .instruction { position: absolute; top: 20px; left: 20px; color: rgba(255,255,255,0.6); z-index: 3; pointer-events: none; text-shadow: 0 0 5px #000; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; }
+        .key-hint { font-size: 12px; color: #aaa; margin-top: 5px; }
         
         /* 特效文字层 */
         .overlay-text {
             position: absolute;
-            top: 50%;
-            left: 50%;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 80px;
-            font-weight: bold;
+            font-size: 80px; font-weight: bold;
             color: transparent;
-            background-image: linear-gradient(to right, #ff00cc, #3333ff, #00ccff); /* 炫彩渐变 */
-            -webkit-background-clip: text;
-            background-clip: text;
-            opacity: 0; /* 默认隐藏 */
+            background-image: linear-gradient(to right, #ff00cc, #3333ff, #00ccff);
+            -webkit-background-clip: text; background-clip: text;
+            opacity: 0;
             transition: opacity 0.8s ease-in-out, transform 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            z-index: 5;
-            pointer-events: none;
-            text-align: center;
-            white-space: nowrap;
+            z-index: 5; pointer-events: none; text-align: center; white-space: nowrap;
             text-shadow: 0 0 30px rgba(255, 255, 255, 0.3);
         }
+        .overlay-text.active { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
         
-        /* 当文字激活时的样式 */
-        .overlay-text.active {
-            opacity: 1;
-            transform: translate(-50%, -50%) scale(1.2);
+        /* 状态指示灯 */
+        .status-indicator {
+            position: absolute; bottom: 10px; right: 350px; color: white; z-index: 5;
+            font-size: 14px; opacity: 0.8;
         }
     </style>
     
-    <!-- 引入 MediaPipe 和 Three.js -->
+    <!-- MediaPipe 核心库 -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <!-- Three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
-    <div id="loading">正在准备生日惊喜...<br>(请允许摄像头权限)</div>
+    <div id="loading">系统启动中...<br><span style="font-size:16px">请允许摄像头权限</span></div>
     
     <div class="instruction">
-        <h3>🎮 魔法手势指南：</h3>
-        <p>👌 <b>张开手指</b>：放大星云并触发惊喜</p>
-        <p>🤏 <b>捏合手指</b>：缩小隐藏惊喜</p>
-        <p>👋 <b>快速挥手</b>：切换下一个场景</p>
+        <h3>🎮 交互指南</h3>
+        <p>🟡 <b>拇指+食指</b>：张开/捏合控制缩放</p>
+        <p>🔴 <b>红点 (手心)</b>：快速左右移动切换场景</p>
+        <div class="key-hint">⌨️ 也可以使用键盘 ← 左 / 右 → 键切换</div>
     </div>
 
-    <!-- 特效文字元素 -->
+    <div class="status-indicator" id="status-text">等待手势...</div>
+
     <div id="text-birthday" class="overlay-text">🎂 生日快乐！🎉</div>
     <div id="text-name" class="overlay-text">✨ 解政淼 ✨</div>
 
-    <div id="video-container">
+    <!-- 摄像头与可视化区域 -->
+    <div id="camera-wrapper">
         <video class="input_video"></video>
+        <canvas class="output_canvas" width="320" height="240"></canvas>
     </div>
+
     <div id="canvas-container"></div>
 
 <script>
-    // ================= THREE.JS 场景设置 =================
+    // ================= THREE.JS 场景设置 (保持高级蛋糕版) =================
     let scene, camera, renderer, particles, cakeGroup;
-    let cakeFlames = []; // 存储火焰网格，用于动画闪烁
+    let cakeFlames = []; 
     let currentShapeIndex = 0;
     const shapes = ['galaxy', 'cake_mode', 'sphere']; 
     let targetScale = 1.0; 
@@ -81,7 +107,7 @@
     function initThree() {
         const container = document.getElementById('canvas-container');
         scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(0x111111, 0.002); //稍微暗一点的背景，突出蛋糕
+        scene.fog = new THREE.FogExp2(0x111111, 0.002); 
 
         camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.z = 40;
@@ -89,22 +115,16 @@
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
-        // 开启阴影支持，增加立体感
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         container.appendChild(renderer.domElement);
 
-        // === 灯光升级 ===
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // 环境光柔和一点
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
         scene.add(ambientLight);
-
-        // 主光源（模拟影棚灯光）
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
         dirLight.position.set(10, 20, 10);
         dirLight.castShadow = true;
         scene.add(dirLight);
-
-        // 侧补光（暖色）
         const spotLight = new THREE.SpotLight(0xffaa00, 0.5);
         spotLight.position.set(-10, 10, 0);
         scene.add(spotLight);
@@ -123,15 +143,12 @@
 
     function createParticles(type) {
         if (particles) scene.remove(particles);
-        if (type === 'cake_mode') {
-            type = 'tunnel'; 
-        }
+        if (type === 'cake_mode') type = 'tunnel'; 
 
         const geometry = new THREE.BufferGeometry();
         const count = 6000;
         const positions = new Float32Array(count * 3);
         const colors = new Float32Array(count * 3);
-
         const color1 = new THREE.Color(0x00ffff);
         const color2 = new THREE.Color(0xff00ff);
 
@@ -162,7 +179,6 @@
             positions[i * 3] = x;
             positions[i * 3 + 1] = y;
             positions[i * 3 + 2] = z;
-
             const mixedColor = color1.clone().lerp(color2, Math.random());
             colors[i * 3] = mixedColor.r;
             colors[i * 3 + 1] = mixedColor.g;
@@ -178,204 +194,232 @@
         scene.add(particles);
     }
 
-    // === 🎂 高级蛋糕制作函数 ===
     function createCake() {
         cakeGroup = new THREE.Group();
-        cakeFlames = []; // 清空之前的火焰引用
+        cakeFlames = []; 
+        const creamWhiteMat = new THREE.MeshStandardMaterial({ color: 0xfffff0, roughness: 0.3 }); 
+        const creamPinkMat = new THREE.MeshStandardMaterial({ color: 0xffc0cb, roughness: 0.3 });  
+        const plateMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.1, metalness: 0.3 }); 
+        const cherryMat = new THREE.MeshStandardMaterial({ color: 0xcc0000, roughness: 0.1, metalness: 0.1 }); 
+        const candleMat = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.2, metalness: 0.4 }); 
+        const flameMat = new THREE.MeshBasicMaterial({ color: 0xff6600 }); 
 
-        // 材质定义
-        const creamWhiteMat = new THREE.MeshStandardMaterial({ color: 0xfffff0, roughness: 0.3 }); // 亮白奶油
-        const creamPinkMat = new THREE.MeshStandardMaterial({ color: 0xffc0cb, roughness: 0.3 });  // 粉色奶油
-        const plateMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.1, metalness: 0.3 }); // 银盘子
-        const cherryMat = new THREE.MeshStandardMaterial({ color: 0xcc0000, roughness: 0.1, metalness: 0.1 }); // 亮红樱桃
-        const candleMat = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.2, metalness: 0.4 }); // 金色蜡烛
-        const flameMat = new THREE.MeshBasicMaterial({ color: 0xff6600 }); // 火焰
+        const plate = new THREE.Mesh(new THREE.CylinderGeometry(11, 10, 0.5, 64), plateMat);
+        plate.position.y = -2; plate.receiveShadow = true; cakeGroup.add(plate);
+        
+        const baseLayer = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, 4, 64), creamWhiteMat);
+        baseLayer.castShadow = true; cakeGroup.add(baseLayer);
 
-        // 1. 托盘
-        const plateGeo = new THREE.CylinderGeometry(11, 10, 0.5, 64);
-        const plate = new THREE.Mesh(plateGeo, plateMat);
-        plate.position.y = -2;
-        plate.receiveShadow = true;
-        cakeGroup.add(plate);
-
-        // 2. 底层蛋糕 (大圆柱)
-        const baseGeo = new THREE.CylinderGeometry(9, 9, 4, 64);
-        const baseLayer = new THREE.Mesh(baseGeo, creamWhiteMat);
-        baseLayer.castShadow = true;
-        cakeGroup.add(baseLayer);
-
-        // 3. 底层装饰：底部的一圈奶油球
         for(let i=0; i<16; i++) {
             const angle = (i / 16) * Math.PI * 2;
-            const x = Math.cos(angle) * 8.5;
-            const z = Math.sin(angle) * 8.5;
             const puff = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 16), creamPinkMat);
-            puff.position.set(x, -1.8, z);
+            puff.position.set(Math.cos(angle) * 8.5, -1.8, Math.sin(angle) * 8.5);
             cakeGroup.add(puff);
         }
 
-        // 4. 顶层蛋糕 (小圆柱)
-        const topGeo = new THREE.CylinderGeometry(6.5, 6.5, 3.5, 64);
-        const topLayer = new THREE.Mesh(topGeo, creamPinkMat);
-        topLayer.position.y = 3.75; // 叠加高度
-        topLayer.castShadow = true;
-        cakeGroup.add(topLayer);
+        const topLayer = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 6.5, 3.5, 64), creamPinkMat);
+        topLayer.position.y = 3.75; topLayer.castShadow = true; cakeGroup.add(topLayer);
 
-        // 5. 顶层装饰：连接处的奶油花边 (Torus)
-        const torusGeo = new THREE.TorusGeometry(6.3, 0.4, 16, 64);
-        const ring = new THREE.Mesh(torusGeo, creamWhiteMat);
-        ring.rotation.x = Math.PI / 2;
-        ring.position.y = 2.0;
-        cakeGroup.add(ring);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(6.3, 0.4, 16, 64), creamWhiteMat);
+        ring.rotation.x = Math.PI / 2; ring.position.y = 2.0; cakeGroup.add(ring);
 
-        // 6. 顶部樱桃和蜡烛
-        // 我们放一圈樱桃，中间放一根大蜡烛，或者一圈蜡烛。这里做一圈樱桃+5根蜡烛。
-        
-        // 樱桃圈
         for(let i=0; i<8; i++) {
-            const angle = (i / 8) * Math.PI * 2;
-            const x = Math.cos(angle) * 5.8;
-            const z = Math.sin(angle) * 5.8;
             const cherry = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), cherryMat);
-            cherry.position.set(x, 5.6, z);
+            cherry.position.set(Math.cos((i/8)*Math.PI*2)*5.8, 5.6, Math.sin((i/8)*Math.PI*2)*5.8);
             cakeGroup.add(cherry);
         }
 
-        // 蜡烛 (5根)
         for(let i=0; i<5; i++) {
             const angle = (i / 5) * Math.PI * 2;
-            const r = 3.5;
-            const x = Math.cos(angle) * r;
-            const z = Math.sin(angle) * r;
-            
-            // 烛身
-            const candleGeo = new THREE.CylinderGeometry(0.15, 0.15, 2.5, 16);
-            const candle = new THREE.Mesh(candleGeo, candleMat);
-            candle.position.set(x, 6.5, z);
+            const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 2.5, 16), candleMat);
+            candle.position.set(Math.cos(angle)*3.5, 6.5, Math.sin(angle)*3.5);
             cakeGroup.add(candle);
-            
-            // 火焰
-            const flameGeo = new THREE.ConeGeometry(0.25, 0.8, 16);
-            const flame = new THREE.Mesh(flameGeo, flameMat);
-            flame.position.set(0, 1.6, 0); // 相对蜡烛的位置
-            candle.add(flame);
-            
-            // 将火焰加入数组以便动画控制
-            cakeFlames.push(flame);
-
-            // 每个蜡烛增加一个小点光源，照亮周围
+            const flame = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.8, 16), flameMat);
+            flame.position.set(0, 1.6, 0); candle.add(flame); cakeFlames.push(flame);
             const candleLight = new THREE.PointLight(0xffaa00, 0.5, 5);
-            candleLight.position.set(0, 1.5, 0);
-            candle.add(candleLight);
+            candleLight.position.set(0, 1.5, 0); candle.add(candleLight);
         }
-
-        // 整体调整
-        cakeGroup.rotation.x = 0.15; // 稍微前倾视角
-        cakeGroup.visible = false; 
-        scene.add(cakeGroup);
+        cakeGroup.rotation.x = 0.15; cakeGroup.visible = false; scene.add(cakeGroup);
     }
 
     function animateThree() {
         requestAnimationFrame(animateThree);
-        
         const time = Date.now() * 0.001;
-
-        // 粒子动画
         if (particles) {
             particles.rotation.y += 0.002;
             particles.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.1);
         }
-
-        // 蛋糕动画
         if (cakeGroup && cakeGroup.visible) {
-            // 缓慢旋转展示
             cakeGroup.rotation.y = Math.sin(time * 0.5) * 0.2; 
-
-            // 弹出效果
             const cakeScaleTarget = (targetScale > 1.8) ? 1 : 0.01;
             cakeGroup.scale.lerp(new THREE.Vector3(cakeScaleTarget, cakeScaleTarget, cakeScaleTarget), 0.1);
-
-            // 🔥 火焰闪烁特效
             cakeFlames.forEach((flame, index) => {
-                // 随机缩放模拟闪烁
                 const scaleY = 1 + Math.sin(time * 10 + index) * 0.2 + (Math.random() * 0.2);
                 const scaleX = 1 + Math.cos(time * 10 + index) * 0.1;
                 flame.scale.set(scaleX, scaleY, scaleX);
-                // 微微改变颜色 brightness
                 flame.material.color.setHSL(0.08, 1, 0.5 + Math.random() * 0.2);
             });
         }
-
         renderer.render(scene, camera);
     }
 
-    // ================= MEDIAPIPE 逻辑 (保持不变) =================
+    // ================= MEDIAPIPE & 可视化逻辑 =================
+    
     const videoElement = document.getElementsByClassName('input_video')[0];
+    const canvasElement = document.getElementsByClassName('output_canvas')[0];
+    const canvasCtx = canvasElement.getContext('2d');
+    
     const textBirthday = document.getElementById('text-birthday');
     const textName = document.getElementById('text-name');
+    const statusText = document.getElementById('status-text');
 
     let lastPalmX = null;
     let lastTime = 0;
     let swipeCooldown = false;
+    let switchTriggerEffect = 0; // 用于绘制切换触发时的特效
     const TRIGGER_THRESHOLD = 2.2; 
+
+    function switchScene(direction) {
+        if (swipeCooldown) return;
+        if (direction > 0) currentShapeIndex = (currentShapeIndex + 1) % shapes.length;
+        else currentShapeIndex = (currentShapeIndex - 1 + shapes.length) % shapes.length;
+
+        console.log("切换场景:", shapes[currentShapeIndex]);
+        createParticles(shapes[currentShapeIndex]);
+
+        textBirthday.classList.remove('active');
+        textName.classList.remove('active');
+        if (cakeGroup) cakeGroup.visible = false;
+        if (particles) particles.visible = true;
+
+        // 触发视觉特效标记 (Canvas绘图用)
+        switchTriggerEffect = 20; 
+
+        swipeCooldown = true;
+        statusText.innerText = "✨ 切换成功！冷却中...";
+        setTimeout(() => { 
+            swipeCooldown = false; 
+            statusText.innerText = "✅ 准备就绪";
+        }, 800);
+    }
+
+    window.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowRight') switchScene(1);
+        else if (event.key === 'ArrowLeft') switchScene(-1);
+    });
 
     function onResults(results) {
         document.getElementById('loading').style.display = 'none';
+        
+        // 清空 Canvas
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        
+        // 1. 绘制摄像头画面 (半透明，增加科技感)
+        canvasCtx.globalAlpha = 0.8;
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+        canvasCtx.globalAlpha = 1.0;
+
         if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
             const landmarks = results.multiHandLandmarks[0];
+            
+            // === 绘制基础骨架 ===
+            drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, 
+                          {color: '#00FF00', lineWidth: 2}); // 绿色连线
+            drawLandmarks(canvasCtx, landmarks, 
+                          {color: '#FFFFFF', lineWidth: 1, radius: 3}); // 白色节点
+
+            // === 获取关键点 ===
             const thumbTip = landmarks[4];
             const indexTip = landmarks[8];
+            const palmBase = landmarks[9]; // 中指根部，作为挥手识别点
+            
+            // === 2. 缩放控制点可视化 (黄色) ===
+            // 绘制拇指和食指的连线
+            canvasCtx.beginPath();
+            canvasCtx.moveTo(thumbTip.x * canvasElement.width, thumbTip.y * canvasElement.height);
+            canvasCtx.lineTo(indexTip.x * canvasElement.width, indexTip.y * canvasElement.height);
+            canvasCtx.strokeStyle = '#FFFF00';
+            canvasCtx.lineWidth = 4;
+            canvasCtx.stroke();
+
+            // 绘制指尖大点
+            [thumbTip, indexTip].forEach(p => {
+                canvasCtx.beginPath();
+                canvasCtx.arc(p.x * canvasElement.width, p.y * canvasElement.height, 8, 0, 2 * Math.PI);
+                canvasCtx.fillStyle = '#FFFF00';
+                canvasCtx.fill();
+            });
+
+            // === 3. 挥手控制点可视化 (红色) ===
+            const palmX = palmBase.x;
+            const palmY = palmBase.y;
+            const px = palmX * canvasElement.width;
+            const py = palmY * canvasElement.height;
+
+            // 如果刚刚触发了切换，画一个爆炸圈
+            if (switchTriggerEffect > 0) {
+                canvasCtx.beginPath();
+                canvasCtx.arc(px, py, 50 - switchTriggerEffect, 0, 2 * Math.PI);
+                canvasCtx.strokeStyle = `rgba(255, 255, 255, ${switchTriggerEffect / 20})`;
+                canvasCtx.lineWidth = 5;
+                canvasCtx.stroke();
+                switchTriggerEffect--;
+            }
+
+            // 绘制核心识别点 (红点)
+            canvasCtx.beginPath();
+            canvasCtx.arc(px, py, 10, 0, 2 * Math.PI);
+            canvasCtx.fillStyle = swipeCooldown ? '#555555' : '#FF0000'; // 冷却时变灰
+            canvasCtx.fill();
+            // 外圈光晕
+            canvasCtx.beginPath();
+            canvasCtx.arc(px, py, 15, 0, 2 * Math.PI);
+            canvasCtx.strokeStyle = swipeCooldown ? '#555555' : '#FF0000';
+            canvasCtx.lineWidth = 2;
+            canvasCtx.stroke();
+
+            // === 4. 逻辑处理 ===
+            // 计算距离
             const distance = Math.sqrt(Math.pow(thumbTip.x - indexTip.x, 2) + Math.pow(thumbTip.y - indexTip.y, 2));
             let rawScale = distance * 10; 
             targetScale = Math.max(0.5, Math.min(3.5, rawScale));
 
             const isZoomedIn = targetScale > TRIGGER_THRESHOLD;
-
+            // 场景逻辑
             if (currentShapeIndex === 0) {
-                if (isZoomedIn) textBirthday.classList.add('active');
-                else textBirthday.classList.remove('active');
-                if (cakeGroup) cakeGroup.visible = false;
-                textName.classList.remove('active');
+                isZoomedIn ? textBirthday.classList.add('active') : textBirthday.classList.remove('active');
             } else if (currentShapeIndex === 1) {
-                textBirthday.classList.remove('active');
-                textName.classList.remove('active');
-                if (isZoomedIn) {
-                    cakeGroup.visible = true;
-                    if(particles) particles.visible = false; 
-                } else {
-                    cakeGroup.visible = false;
-                    if(particles) particles.visible = true;
-                }
+                if (isZoomedIn) { cakeGroup.visible = true; if(particles) particles.visible = false; }
+                else { cakeGroup.visible = false; if(particles) particles.visible = true; }
             } else if (currentShapeIndex === 2) {
-                textBirthday.classList.remove('active');
-                if (cakeGroup) cakeGroup.visible = false;
-                if (isZoomedIn) textName.classList.add('active');
-                else textName.classList.remove('active');
+                isZoomedIn ? textName.classList.add('active') : textName.classList.remove('active');
             }
 
-            const palmX = landmarks[9].x;
+            // 挥手逻辑
             const currentTime = Date.now();
-            if (lastPalmX !== null && !swipeCooldown) {
+            if (lastPalmX !== null) {
                 const deltaX = palmX - lastPalmX;
                 const velocity = Math.abs(deltaX) / (currentTime - lastTime);
+                
+                // 调试文字绘制在手上
+                // canvasCtx.fillStyle = "white";
+                // canvasCtx.fillText(`Vel: ${velocity.toFixed(4)}`, px + 20, py);
+
                 if (Math.abs(deltaX) > 0.1 && velocity > 0.0015) {
-                    if (deltaX > 0) currentShapeIndex = (currentShapeIndex + 1) % shapes.length;
-                    else currentShapeIndex = (currentShapeIndex - 1 + shapes.length) % shapes.length;
-                    
-                    createParticles(shapes[currentShapeIndex]);
-                    textBirthday.classList.remove('active');
-                    textName.classList.remove('active');
-                    if(cakeGroup) cakeGroup.visible = false;
-                    if(particles) particles.visible = true;
-                    swipeCooldown = true;
-                    setTimeout(() => { swipeCooldown = false; }, 800);
+                    const direction = deltaX > 0 ? 1 : -1;
+                    switchScene(direction);
                 }
             }
             lastPalmX = palmX;
             lastTime = currentTime;
+
         } else {
             lastPalmX = null;
+            statusText.innerText = "👀 请将手放入画面中...";
         }
+        
+        canvasCtx.restore();
     }
 
     const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
@@ -390,3 +434,5 @@
     initThree();
     cameraMedia.start();
 </script>
+</body>
+</html>
