@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手势控制星云图</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #000;
+            overflow: hidden;
+            color: #fff;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #nebulaCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #videoElement {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            height: 240px;
+            border: 3px solid #00ffff;
+            border-radius: 10px;
+            transform: scaleX(-1);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            display: none;
+        }
+
+        #videoElement.active {
+            display: block;
+        }
+
+        #canvasElement {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            height: 240px;
+            border: 3px solid #00ffff;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            display: none;
+        }
+
+        #canvasElement.active {
+            display: block;
+        }
+
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #00ffff;
+            font-size: 14px;
+            line-height: 1.8;
+            max-width: 350px;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        }
+
+        #info h2 {
+            color: #00ffff;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        #info p {
+            margin: 5px 0;
+        }
+
+        .gesture-icon {
+            display: inline-block;
+            margin-right: 5px;
+        }
+
+        #status {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 255, 255, 0.2);
+            padding: 15px 30px;
+            border-radius: 25px;
+            border: 2px solid #00ffff;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            min-width: 300px;
+            max-width: 80%;
+            transition: all 0.3s;
+        }
+
+        #status.error {
+            background: rgba(255, 0, 0, 0.3);
+            border-color: #ff0000;
+            color: #ffcccc;
+        }
+
+        #status.success {
+            background: rgba(0, 255, 0, 0.3);
+            border-color: #00ff00;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(0, 255, 255, 0.3);
+            border-top: 5px solid #00ffff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            font-size: 18px;
+            color: #00ffff;
+            margin-bottom: 10px;
+        }
+
+        .loading-details {
+            font-size: 14px;
+            color: #aaa;
+        }
+
+        #debugInfo {
+            position: absolute;
+            bottom: 80px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            color: #0f0;
+            font-family: monospace;
+            max-width: 400px;
+            display: none;
+        }
+
+        #debugInfo.active {
+            display: block;
+        }
+
+        #startButton {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            font-size: 20px;
+            background: linear-gradient(135deg, #00ffff, #0080ff);
+            border: none;
+            border-radius: 50px;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+            transition: all 0.3s;
+            display: none;
+        }
+
+        #startButton.active {
+            display: block;
+        }
+
+        #startButton:hover {
+            transform: translate(-50%, -50%) scale(1.1);
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.8);
+        }
+
+        .fallback-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #00ffff;
+            display: none;
+        }
+
+        .fallback-controls.active {
+            display: block;
+        }
+
+        .fallback-controls button {
+            margin: 5px;
+            padding: 10px 20px;
+            background: #00ffff;
+            border: none;
+            border-radius: 5px;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .fallback-controls button:hover {
+            background: #00cccc;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="nebulaCanvas"></canvas>
+        <video id="videoElement" autoplay playsinline></video>
+        <canvas id="canvasElement" width="640" height="480"></canvas>
+        
+        <div id="info">
+            <h2>🌌 手势控制说明</h2>
+            <p><span class="gesture-icon">👊</span> 抓握 → 星云缩小</p>
+            <p><span class="gesture-icon">✋</span> 张开 → 星云放大</p>
+            <p><span class="gesture-icon">👈</span> 左滑 → 上一个星云</p>
+            <p><span class="gesture-icon">👉</span> 右滑 → 下一个星云</p>
+            <p style="margin-top: 10px; color: #aaa;">当前星云: <span id="nebulaType">螺旋星云</span></p>
+            <p style="color: #aaa;">缩放: <span id="scaleValue">100%</span></p>
+        </div>
+
+        <div id="loading" class="loading">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">正在初始化... </div>
+            <div class="loading-details">加载手势识别模块</div>
+        </div>
+
+        <button id="startButton">🚀 点击开始体验</button>
+
+        <div id="status">准备就绪</div>
+        
+        <div id="debugInfo"></div>
+
+        <div class="fallback-controls">
+            <div style="margin-bottom: 10px; color: #00ffff;">键盘控制模式</div>
+            <button onclick="app.handleKeyControl('smaller')">缩小 (-)</button>
+            <button onclick="app.handleKeyControl('larger')">放大 (+)</button>
+            <button onclick="app.handleKeyControl('prev')">← 上一个</button>
+            <button onclick="app.handleKeyControl('next')">下一个 →</button>
+        </div>
+    </div>
+
+    <!-- 使用多个CDN源以提高加载成功率 -->
+    <script>
+        // 动态加载脚本的函数
+        function loadScript(urls, index = 0) {
+            return new Promise((resolve, reject) => {
+                if (index >= urls.length) {
+                    reject(new Error('所有CDN源都加载失败'));
+                    return;
+                }
+
+                const script = document.createElement('script');
+                script.src = urls[index];
+                
+                script.onload = () => {
+                    console.log(`✓ 成功加载: ${urls[index]}`);
+                    resolve();
+                };
+                
+                script.onerror = () => {
+                    console.warn(`✗ 加载失败: ${urls[index]}, 尝试下一个源... `);
+                    loadScript(urls, index + 1). then(resolve).catch(reject);
+                };
+                
+                document.head.appendChild(script);
+            });
+        }
+
+        // MediaPipe 库的多个CDN源
+        const cameraUtilsSources = [
+            'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js',
+            'https://unpkg.com/@mediapipe/camera_utils/camera_utils.js'
+        ];
+
+        const handsSources = [
+            'https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js',
+            'https://unpkg.com/@mediapipe/hands/hands.js'
+        ];
+
+        const drawingSources = [
+            'https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js',
+            'https://unpkg.com/@mediapipe/drawing_utils/drawing_utils.js'
+        ];
+
+        // 更新加载状态
+        function updateLoadingStatus(message, details = '') {
+            const loadingDiv = document.getElementById('loading');
+            if (loadingDiv) {
+                const textDiv = loadingDiv.querySelector('.loading-text');
+                const detailsDiv = loadingDiv.querySelector('.loading-details');
+                if (textDiv) textDiv.textContent = message;
+                if (detailsDiv) detailsDiv.textContent = details;
+            }
+            console.log(`[加载状态] ${message} - ${details}`);
+        }
+
+        // 显示错误信息
+        function showError(message, details = '') {
+            const loadingDiv = document.getElementById('loading');
+            if (loadingDiv) {
+                loadingDiv.style.display = 'none';
+            }
+            
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = 'error';
+            statusDiv.innerHTML = `❌ ${message}<br><small>${details}</small>`;
+            
+            // 显示备用控制按钮
+            document.querySelector('.fallback-controls').classList.add('active');
+            
+            console.error(`[错误] ${message}`, details);
+        }
+
+        // 按顺序加载所有必需的脚本
+        async function loadAllScripts() {
+            try {
+                updateLoadingStatus('正在加载手势识别库... ', '步骤 1/3');
+                await loadScript(cameraUtilsSources);
+                
+                updateLoadingStatus('正在加载手部追踪模块...', '步骤 2/3');
+                await loadScript(handsSources);
+                
+                updateLoadingStatus('正在加载绘图工具...', '步骤 3/3');
+                await loadScript(drawingSources);
+                
+                updateLoadingStatus('正在初始化应用...', '即将完成');
+                
+                // 加载应用脚本
+                return Promise.all([
+                    loadLocalScript('nebula.js'),
+                    loadLocalScript('gesture.js'),
+                    loadLocalScript('app.js')
+                ]);
+                
+            } catch (error) {
+                console.error('脚本加载失败:', error);
+                showError('资源加载失败', '请检查网络连接或尝试刷新页面');
+                throw error;
+            }
+        }
+
+        function loadLocalScript(src) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = resolve;
+                script.onerror = () => reject(new Error(`无法加载 ${src}`));
+                document. body.appendChild(script);
+            });
+        }
+
+        // 开始加载
+        loadAllScripts().catch(error => {
+            console. error('初始化失败:', error);
+        });
+    </script>
+</body>
+</html>

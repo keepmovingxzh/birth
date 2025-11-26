@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手势控制星云图</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #000;
+            overflow: hidden;
+            color: #fff;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #nebulaCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #videoElement {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            height: 240px;
+            border: 3px solid #00ffff;
+            border-radius: 10px;
+            transform: scaleX(-1);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            display: none;
+        }
+
+        #videoElement.active {
+            display: block;
+        }
+
+        #canvasElement {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            height: 240px;
+            border: 3px solid #00ffff;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            display: none;
+        }
+
+        #canvasElement.active {
+            display: block;
+        }
+
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #00ffff;
+            font-size: 14px;
+            line-height: 1.8;
+            max-width: 350px;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        }
+
+        #info h2 {
+            color: #00ffff;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        #info p {
+            margin: 5px 0;
+        }
+
+        .gesture-icon {
+            display: inline-block;
+            margin-right: 5px;
+        }
+
+        #status {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 255, 255, 0.2);
+            padding: 15px 30px;
+            border-radius: 25px;
+            border: 2px solid #00ffff;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            min-width: 300px;
+            max-width: 80%;
+            transition: all 0.3s;
+        }
+
+        #status.error {
+            background: rgba(255, 0, 0, 0.3);
+            border-color: #ff0000;
+            color: #ffcccc;
+        }
+
+        #status.success {
+            background: rgba(0, 255, 0, 0.3);
+            border-color: #00ff00;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 1000;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(0, 255, 255, 0.3);
+            border-top: 5px solid #00ffff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            font-size: 18px;
+            color: #00ffff;
+            margin-bottom: 10px;
+        }
+
+        .loading-details {
+            font-size: 14px;
+            color: #aaa;
+        }
+
+        #startButton {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            font-size: 20px;
+            background: linear-gradient(135deg, #00ffff, #0080ff);
+            border: none;
+            border-radius: 50px;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+            transition: all 0. 3s;
+            display: none;
+            z-index: 1000;
+        }
+
+        #startButton.active {
+            display: block;
+        }
+
+        #startButton:hover {
+            transform: translate(-50%, -50%) scale(1.1);
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.8);
+        }
+
+        .fallback-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #00ffff;
+            display: none;
+        }
+
+        .fallback-controls.active {
+            display: block;
+        }
+
+        .fallback-controls button {
+            margin: 5px;
+            padding: 10px 20px;
+            background: #00ffff;
+            border: none;
+            border-radius: 5px;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .fallback-controls button:hover {
+            background: #00cccc;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="nebulaCanvas"></canvas>
+        <video id="videoElement" autoplay playsinline></video>
+        <canvas id="canvasElement" width="640" height="480"></canvas>
+        
+        <div id="info">
+            <h2>🌌 手势控制说明</h2>
+            <p><span class="gesture-icon">👊</span> 抓握 → 星云缩小</p>
+            <p><span class="gesture-icon">✋</span> 张开 → 星云放大</p>
+            <p><span class="gesture-icon">👈</span> 左滑 → 上一个星云</p>
+            <p><span class="gesture-icon">👉</span> 右滑 → 下一个星云</p>
+            <p style="margin-top: 10px; color: #aaa;">当前星云: <span id="nebulaType">螺旋星云</span></p>
+            <p style="color: #aaa;">缩放: <span id="scaleValue">100%</span></p>
+        </div>
+
+        <div id="loading" class="loading">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">正在初始化...</div>
+            <div class="loading-details">加载手势识别模块</div>
+        </div>
+
+        <button id="startButton">🚀 点击开始体验</button>
+
+        <div id="status">准备就绪</div>
+
+        <div class="fallback-controls">
+            <div style="margin-bottom: 10px; color: #00ffff;">键盘控制模式</div>
+            <button onclick="app.handleKeyControl('smaller')">缩小 (-)</button>
+            <button onclick="app.handleKeyControl('larger')">放大 (+)</button>
+            <button onclick="app.handleKeyControl('prev')">← 上一个</button>
+            <button onclick="app. handleKeyControl('next')">下一个 →</button>
+        </div>
+    </div>
+
+    <!-- 加载外部库 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr. net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+
+    <script>
+    // ============================================
+    // 星云渲染引擎
+    // ============================================
+    class NebulaRenderer {
+        constructor(canvas) {
+            this.canvas = canvas;
+            this.ctx = canvas.getContext('2d');
+            this.resize();
+            
+            this.scale = 1.0;
+            this.targetScale = 1.0;
+            this.currentNebulaIndex = 0;
+            this.particles = [];
+            
+            this.nebulaTypes = [
+                { name: '螺旋星云', type: 'spiral', color: '#ff00ff' },
+                { name: '球状星云', type: 'spherical', color: '#00ffff' },
+                { name: '环状星云', type: 'ring', color: '#ffff00' },
+                { name: '椭圆星云', type: 'elliptical', color: '#ff6600' },
+                { name: '不规则星云', type: 'irregular', color: '#00ff00' }
+            ];
+            
+            this.initParticles();
+            window.addEventListener('resize', () => this.resize());
+        }
+        
+        resize() {
+            this.canvas. width = window.innerWidth;
+            this. canvas.height = window.innerHeight;
+            this.centerX = this.canvas.width / 2;
+            this.centerY = this.canvas.height / 2;
+        }
+        
+        initParticles() {
+            this.particles = [];
+            const particleCount = 2000;
+            
+            for (let i = 0; i < particleCount; i++) {
+                this.particles.push({
+                    angle: Math.random() * Math. PI * 2,
+                    distance: Math.random() * 300,
+                    size: Math.random() * 2 + 0.5,
+                    speed: Math.random() * 0.002 + 0.001,
+                    opacity: Math.random() * 0.8 + 0.2,
+                    colorOffset: Math.random() * 60 - 30
+                });
+            }
+        }
+        
+        getCurrentNebula() {
+            return this.nebulaTypes[this.currentNebulaIndex];
+        }
+        
+        nextNebula() {
+            this. currentNebulaIndex = (this.currentNebulaIndex + 1) % this.nebulaTypes.length;
+            this.initParticles();
+        }
+        
+        previousNebula() {
+            this.currentNebulaIndex = (this.currentNebulaIndex - 1 + this.nebulaTypes.length) % this. nebulaTypes.length;
+            this.initParticles();
+        }
+        
+        setScale(scale) {
+            this.targetScale = Math.max(0.3, Math.min(3.0, scale));
+        }
+        
+        getParticlePosition(particle, nebulaType) {
+            const { angle, distance } = particle;
+            let x, y, radius;
+            
+            switch(nebulaType) {
+                case 'spiral':
+                    radius = distance * (1 + angle / (Math.PI * 2));
+                    x = Math.cos(angle) * radius;
+                    y = Math.sin(angle) * radius;
+                    break;
+                    
+                case 'spherical':
+                    const phi = Math.acos(2 * (distance / 300) - 1);
+                    radius = distance;
+                    x = Math.cos(angle) * Math.sin(phi) * radius;
+                    y = Math.sin(angle) * Math.sin(phi) * radius * 0.7;
+                    break;
+                    
+                case 'ring':
+                    radius = 150 + distance * 0.5;
+                    const thickness = 50;
+                    const ringOffset = (Math.random() - 0.5) * thickness;
+                    x = Math. cos(angle) * (radius + ringOffset);
+                    y = Math.sin(angle) * (radius + ringOffset) * 0.3;
+                    break;
+                    
+                case 'elliptical':
+                    x = Math.cos(angle) * distance * 1.5;
+                    y = Math.sin(angle) * distance * 0.6;
+                    break;
+                    
+                case 'irregular':
+                    const noise = Math.sin(angle * 5) * 50;
+                    radius = distance + noise;
+                    x = Math.cos(angle) * radius;
+                    y = Math.sin(angle) * radius;
+                    break;
+                    
+                default:
+                    x = Math.cos(angle) * distance;
+                    y = Math.sin(angle) * distance;
+            }
+            
+            return { x, y };
+        }
+        
+        hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ?  {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : { r: 255, g: 255, b: 255 };
+        }
+        
+        render() {
+            this.scale += (this.targetScale - this.scale) * 0.1;
+            
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+            this.ctx. fillRect(0, 0, this.canvas.width, this. canvas.height);
+            
+            const nebula = this.getCurrentNebula();
+            const baseColor = this.hexToRgb(nebula.color);
+            
+            this.ctx.save();
+            this.ctx.translate(this.centerX, this. centerY);
+            this.ctx.scale(this.scale, this.scale);
+            
+            this.particles.forEach(particle => {
+                particle.angle += particle.speed;
+                
+                const pos = this.getParticlePosition(particle, nebula.type);
+                
+                const r = Math.max(0, Math.min(255, baseColor.r + particle.colorOffset));
+                const g = Math.max(0, Math.min(255, baseColor. g + particle.colorOffset));
+                const b = Math.max(0, Math.min(255, baseColor.b + particle.colorOffset));
+                
+                this. ctx.beginPath();
+                this.ctx. arc(pos.x, pos. y, particle.size, 0, Math.PI * 2);
+                this.ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${particle. opacity})`;
+                this.ctx.fill();
+                
+                if (particle.size > 1.5) {
+                    const gradient = this.ctx.createRadialGradient(
+                        pos.x, pos. y, 0,
+                        pos. x, pos.y, particle. size * 3
+                    );
+                    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${particle.opacity * 0.3})`);
+                    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                    
+                    this.ctx.beginPath();
+                    this.ctx.arc(pos.x, pos.y, particle.size * 3, 0, Math.PI * 2);
+                    this.ctx.fillStyle = gradient;
+                    this.ctx.fill();
+                }
+            });
+            
+            this.ctx.restore();
+            
+            const centerGradient = this.ctx.createRadialGradient(
+                this.centerX, this.centerY, 0,
+                this. centerX, this.centerY, 100 * this.scale
+            );
+            centerGradient.addColorStop(0, `rgba(${baseColor.r}, ${baseColor.g}, ${baseColor.b}, 0.3)`);
+            centerGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            
+            this.ctx.beginPath();
+            this.ctx. arc(this.centerX, this.centerY, 100 * this.scale, 0, Math.PI * 2);
+            this.ctx.fillStyle = centerGradient;
+            this. ctx.fill();
+        }
+    }
+
+    // ============================================
+    // 手势识别引擎
+    // ============================================
+    class GestureRecognizer {
+        constructor() {
+            this.previousHandPositionX = null;
+            this.gestureStartTime = 0;
+            this.gestureThreshold = 100;
+            this.gestureTimeThreshold = 500;
+            this.lastGestureTime = 0;
+            this.gestureCooldown = 1000;
+        }
+        
+        calculateHandOpenness(landmarks) {
+            if (! landmarks || landmarks.length < 21) return 0;
+            
+            const palm = landmarks[0];
+            const fingers = [
+                landmarks[4],
+                landmarks[8],
+                landmarks[12],
+                landmarks[16],
+                landmarks[20]
+            ];
+            
+            let totalDistance = 0;
+            fingers.forEach(finger => {
+                const dx = finger.x - palm.x;
+                const dy = finger.y - palm.y;
+                totalDistance += Math.sqrt(dx * dx + dy * dy);
+            });
+            
+            return totalDistance / fingers.length;
+        }
+        
+        detectSwipe(landmarks) {
+            if (!landmarks || landmarks.length < 21) return null;
+            
+            const currentTime = Date.now();
+            
+            if (currentTime - this. lastGestureTime < this. gestureCooldown) {
+                return null;
+            }
+            
+            const handCenterX = landmarks[9]. x;
+            
+            if (this.previousHandPositionX === null) {
+                this. previousHandPositionX = handCenterX;
+                this.gestureStartTime = currentTime;
+                return null;
+            }
+            
+            const deltaX = handCenterX - this.previousHandPositionX;
+            const deltaTime = currentTime - this.gestureStartTime;
+            
+            let gesture = null;
+            
+            if (deltaX < -this.gestureThreshold && deltaTime < this.gestureTimeThreshold) {
+                gesture = 'swipe_left';
+                this.lastGestureTime = currentTime;
+                this.previousHandPositionX = null;
+            }
+            else if (deltaX > this.gestureThreshold && deltaTime < this.gestureTimeThreshold) {
+                gesture = 'swipe_right';
+                this.lastGestureTime = currentTime;
+                this.previousHandPositionX = null;
+            }
+            else if (deltaTime > this.gestureTimeThreshold) {
+                this.previousHandPositionX = handCenterX;
+                this.gestureStartTime = currentTime;
+            }
+            
+            return gesture;
+        }
+        
+        recognizeGesture(landmarks) {
+            if (!landmarks) return null;
+            
+            const openness = this.calculateHandOpenness(landmarks);
+            const swipe = this.detectSwipe(landmarks);
+            
+            return {
+                openness: openness,
+                swipe: swipe,
+                isGrabbing: openness < 0.15,
+                isOpen: openness > 0.25
+            };
+        }
+    }
+
+    // ============================================
+    // 主应用程序
+    // ============================================
+    class NebulaApp {
+        constructor() {
+            this. nebulaCanvas = document.getElementById('nebulaCanvas');
+            this.videoElement = document.getElementById('videoElement');
+            this.canvasElement = document.getElementById('canvasElement');
+            this.statusElement = document.getElementById('status');
+            
+            this.nebulaRenderer = new NebulaRenderer(this.nebulaCanvas);
+            this.gestureRecognizer = new GestureRecognizer();
+            
+            this.baseScale = 1.0;
+            this.isInitialized = false;
+            
+            this.animate();
+            this.checkBrowserSupport();
+        }
+        
+        checkBrowserSupport() {
+            setTimeout(() => {
+                const issues = [];
+                
+                if (!navigator. mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    issues.push('浏览器不支持摄像头访问');
+                }
+                
+                if (typeof Hands === 'undefined') {
+                    issues.push('MediaPipe Hands 库未加载');
+                }
+                
+                if (typeof Camera === 'undefined') {
+                    issues.push('Camera 工具未加载');
+                }
+                
+                console.log('浏览器支持检查:', issues.length === 0 ? '✓ 全部通过' : '✗ ' + issues.join(', '));
+                
+                if (issues. length > 0) {
+                    this.showFallbackMode('部分功能不可用', issues. join('；'));
+                    return;
+                }
+                
+                this.showStartButton();
+            }, 1000);
+        }
+        
+        showStartButton() {
+            const loading = document.getElementById('loading');
+            const startButton = document.getElementById('startButton');
+            
+            if (loading) loading.style.display = 'none';
+            if (startButton) {
+                startButton.classList.add('active');
+                startButton.onclick = () => this.init();
+            }
+            
+            this.updateStatus('点击按钮开始体验', 'success');
+        }
+        
+        async init() {
+            const startButton = document.getElementById('startButton');
+            if (startButton) startButton.style.display = 'none';
+            
+            this. updateStatus('正在请求摄像头权限... ', '');
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: 640, 
+                        height: 480,
+                        facingMode: 'user'
+                    } 
+                });
+                
+                console.log('✓ 摄像头权限已获取');
+                this.updateStatus('正在加载AI模型...', '');
+                
+                this.hands = new Hands({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                    }
+                });
+                
+                this.hands.setOptions({
+                    maxNumHands: 1,
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+                
+                this.hands.onResults((results) => this.onHandsResults(results));
+                
+                console.log('✓ MediaPipe 模型配置完成');
+                this.updateStatus('正在启动摄像头...', '');
+                
+                this.camera = new Camera(this.videoElement, {
+                    onFrame: async () => {
+                        if (this.hands) {
+                            await this.hands.send({ image: this.videoElement });
+                        }
+                    },
+                    width: 640,
+                    height: 480
+                });
+                
+                await this.camera.start();
+                
+                this.videoElement.classList.add('active');
+                this.canvasElement.classList.add('active');
+                
+                this.isInitialized = true;
+                
+                console.log('✓ 初始化完成！');
+                this.updateStatus('✅ 就绪 - 开始使用手势控制', 'success');
+                
+                setTimeout(() => {
+                    this. statusElement.style.opacity = '0. 3';
+                }, 3000);
+                
+            } catch (error) {
+                console. error('初始化失败:', error);
+                
+                let errorMessage = '初始化失败';
+                let errorDetails = '';
+                
+                if (error.name === 'NotAllowedError') {
+                    errorMessage = '摄像头权限被拒绝';
+                    errorDetails = '请在浏览器设置中允许访问摄像头';
+                } else if (error.name === 'NotFoundError') {
+                    errorMessage = '未找到摄像头';
+                    errorDetails = '请确保设备已连接摄像头';
+                } else if (error.name === 'NotReadableError') {
+                    errorMessage = '摄像头正在被其他应用使用';
+                    errorDetails = '请关闭其他使用摄像头的应用';
+                } else {
+                    errorDetails = error.message;
+                }
+                
+                this.showFallbackMode(errorMessage, errorDetails);
+            }
+        }
+        
+        showFallbackMode(message, details) {
+            this.updateStatus(`⚠️ ${message}`, 'error');
+            
+            const loading = document.getElementById('loading');
+            if (loading) loading.style.display = 'none';
+            
+            const startButton = document.getElementById('startButton');
+            if (startButton) startButton.style.display = 'none';
+            
+            document.querySelector('.fallback-controls').classList.add('active');
+            
+            this.enableKeyboardControl();
+            
+            const statusDiv = this.statusElement;
+            statusDiv.innerHTML = `
+                ⚠️ ${message}<br>
+                <small style="font-size: 12px;">${details}</small><br>
+                <small style="font-size: 12px; color: #aaa;">已切换到键盘控制模式</small>
+            `;
+        }
+        
+        enableKeyboardControl() {
+            document.addEventListener('keydown', (e) => {
+                switch(e.key) {
+                    case '-':
+                    case '_':
+                        this. handleKeyControl('smaller');
+                        break;
+                    case '=':
+                    case '+':
+                        this.handleKeyControl('larger');
+                        break;
+                    case 'ArrowLeft':
+                        this.handleKeyControl('prev');
+                        break;
+                    case 'ArrowRight':
+                        this.handleKeyControl('next');
+                        break;
+                }
+            });
+            
+            console.log('✓ 键盘控制已启用 (+/- 缩放, ←/→ 切换)');
+        }
+        
+        handleKeyControl(action) {
+            switch(action) {
+                case 'smaller':
+                    this. baseScale = Math.max(0.3, this.baseScale - 0.1);
+                    this.nebulaRenderer.setScale(this.baseScale);
+                    this.updateStatus('缩小星云');
+                    break;
+                case 'larger':
+                    this.baseScale = Math.min(3.0, this.baseScale + 0.1);
+                    this.nebulaRenderer.setScale(this.baseScale);
+                    this.updateStatus('放大星云');
+                    break;
+                case 'prev':
+                    this.nebulaRenderer.previousNebula();
+                    this.updateStatus('上一个星云');
+                    this.updateNebulaInfo();
+                    break;
+                case 'next':
+                    this.nebulaRenderer.nextNebula();
+                    this.updateStatus('下一个星云');
+                    this.updateNebulaInfo();
+                    break;
+            }
+            
+            document.getElementById('scaleValue').textContent = 
+                Math.round(this.baseScale * 100) + '%';
+        }
+        
+        onHandsResults(results) {
+            const canvasCtx = this.canvasElement. getContext('2d');
+            canvasCtx.save();
+            canvasCtx. clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
+            
+            canvasCtx.drawImage(results.image, 0, 0, this.canvasElement.width, this.canvasElement.height);
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks. length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                
+                this.drawHand(canvasCtx, landmarks);
+                
+                const gesture = this.gestureRecognizer.recognizeGesture(landmarks);
+                
+                if (gesture) {
+                    if (gesture. isGrabbing) {
+                        this.baseScale = Math.max(0.3, this.baseScale - 0.02);
+                        this.updateStatus('👊 抓握 - 缩小中');
+                    } else if (gesture.isOpen) {
+                        this.baseScale = Math. min(3.0, this. baseScale + 0.02);
+                        this.updateStatus('✋ 张开 - 放大中');
+                    }
+                    
+                    this.nebulaRenderer.setScale(this.baseScale);
+                    
+                    if (gesture.swipe === 'swipe_left') {
+                        this.nebulaRenderer.previousNebula();
+                        this.updateStatus('👈 左滑 - 上一个星云');
+                        this.updateNebulaInfo();
+                    } else if (gesture.swipe === 'swipe_right') {
+                        this.nebulaRenderer.nextNebula();
+                        this. updateStatus('👉 右滑 - 下一个星云');
+                        this.updateNebulaInfo();
+                    }
+                    
+                    document.getElementById('scaleValue').textContent = 
+                        Math. round(this.baseScale * 100) + '%';
+                }
+            } else {
+                canvasCtx.font = '20px Arial';
+                canvasCtx.fillStyle = '#00ffff';
+                canvasCtx.textAlign = 'center';
+                canvasCtx.fillText('请将手掌放在摄像头前', this.canvasElement.width / 2, this.canvasElement.height / 2);
+            }
+            
+            canvasCtx.restore();
+        }
+        
+        drawHand(ctx, landmarks) {
+            const connections = [
+                [0, 1], [1, 2], [2, 3], [3, 4],
+                [0, 5], [5, 6], [6, 7], [7, 8],
+                [0, 9], [9, 10], [10, 11], [11, 12],
+                [0, 13], [13, 14], [14, 15], [15, 16],
+                [0, 17], [17, 18], [18, 19], [19, 20],
+                [5, 9], [9, 13], [13, 17]
+            ];
+            
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 2;
+            
+            connections.forEach(([start, end]) => {
+                const startPoint = landmarks[start];
+                const endPoint = landmarks[end];
+                
+                ctx.beginPath();
+                ctx. moveTo(startPoint.x * this.canvasElement.width, startPoint. y * this.canvasElement. height);
+                ctx.lineTo(endPoint.x * this. canvasElement.width, endPoint.y * this.canvasElement.height);
+                ctx.stroke();
+            });
+            
+            landmarks.forEach((landmark, index) => {
+                const x = landmark.x * this.canvasElement.width;
+                const y = landmark.y * this. canvasElement.height;
+                
+                ctx.beginPath();
+                ctx. arc(x, y, index === 0 ? 8 : 5, 0, Math.PI * 2);
+                ctx.fillStyle = index === 0 ? '#ff00ff' : '#00ffff';
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            });
+        }
+        
+        updateStatus(message, type = '') {
+            this.statusElement. textContent = message;
+            this. statusElement.className = type;
+            this.statusElement. style.opacity = '1';
+            
+            clearTimeout(this.statusTimeout);
+            this.statusTimeout = setTimeout(() => {
+                if (type !== 'error') {
+                    this.statusElement.style.opacity = '0.3';
+                }
+            }, 2000);
+        }
+        
+        updateNebulaInfo() {
+            const nebula = this.nebulaRenderer.getCurrentNebula();
+            document.getElementById('nebulaType').textContent = nebula.name;
+            document.getElementById('nebulaType').style.color = nebula.color;
+        }
+        
+        animate() {
+            this.nebulaRenderer.render();
+            requestAnimationFrame(() => this.animate());
+        }
+    }
+
+    // 启动应用
+    let app;
+    window.addEventListener('load', () => {
+        setTimeout(() => {
+            try {
+                app = new NebulaApp();
+            } catch (error) {
+                console. error('应用启动失败:', error);
+                document.getElementById('status').innerHTML = `
+                    ❌ 应用启动失败<br>
+                    <small>${error.message}</small>
+                `;
+                document.getElementById('loading').style.display = 'none';
+            }
+        }, 500);
+    });
+    </script>
+</body>
+</html>

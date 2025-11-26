@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手势控制星云图</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            width: 100%;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #ff8a00, #e52e71);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.8;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 30px;
+            width: 100%;
+            max-width: 1400px;
+        }
+        
+        .camera-section {
+            flex: 1;
+            min-width: 400px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+        }
+        
+        .nebula-section {
+            flex: 1.5;
+            min-width: 500px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+        
+        .section-title {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            color: #7e8ce0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .section-title i {
+            font-size: 1.3rem;
+        }
+        
+        .video-container {
+            position: relative;
+            width: 100%;
+            height: 300px;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .control-group {
+            background: rgba(255, 255, 255, 0.08);
+            padding: 15px;
+            border-radius: 10px;
+        }
+        
+        .control-title {
+            font-size: 1.1rem;
+            margin-bottom: 10px;
+            color: #a8b1ff;
+        }
+        
+        .gesture-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .gesture-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        
+        .gesture-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .gesture-icon {
+            width: 40px;
+            height: 40px;
+            background: rgba(126, 140, 224, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+        
+        .gesture-desc {
+            flex: 1;
+        }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+            padding: 10px 15px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff4757;
+        }
+        
+        .status-dot.active {
+            background: #2ed573;
+        }
+        
+        #nebula-canvas {
+            width: 100%;
+            height: 500px;
+            display: block;
+        }
+        
+        .nebula-info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 1.1rem;
+        }
+        
+        .nebula-name {
+            color: #7e8ce0;
+            font-weight: bold;
+        }
+        
+        .instructions {
+            margin-top: 30px;
+            max-width: 800px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 10px;
+        }
+        
+        .instructions h2 {
+            margin-bottom: 15px;
+            color: #7e8ce0;
+        }
+        
+        .instructions p {
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+        
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            padding: 30px;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left: 4px solid #7e8ce0;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        @media (max-width: 900px) {
+            .container {
+                flex-direction: column;
+            }
+            
+            .camera-section, .nebula-section {
+                min-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>手势控制星云图</h1>
+        <p class="subtitle">使用摄像头识别手势来控制星云图的缩放和切换</p>
+    </header>
+    
+    <div class="container">
+        <div class="camera-section">
+            <h2 class="section-title">
+                <span>👁️</span> 摄像头与手势识别
+            </h2>
+            
+            <div class="video-container">
+                <video id="video" autoplay playsinline></video>
+                <canvas id="canvas"></canvas>
+            </div>
+            
+            <div class="controls">
+                <div class="control-group">
+                    <h3 class="control-title">手势控制</h3>
+                    <div class="gesture-list">
+                        <div class="gesture-item">
+                            <div class="gesture-icon">👊</div>
+                            <div class="gesture-desc">握拳向内 - 缩小星云图</div>
+                        </div>
+                        <div class="gesture-item">
+                            <div class="gesture-icon">👋</div>
+                            <div class="gesture-desc">手掌向外 - 放大星云图</div>
+                        </div>
+                        <div class="gesture-item">
+                            <div class="gesture-icon">👈</div>
+                            <div class="gesture-desc">向左滑动 - 上一个星云</div>
+                        </div>
+                        <div class="gesture-item">
+                            <div class="gesture-icon">👉</div>
+                            <div class="gesture-desc">向右滑动 - 下一个星云</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="status">
+                    <div class="status-dot" id="status-dot"></div>
+                    <span id="status-text">正在加载模型...</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="nebula-section">
+            <h2 class="section-title">
+                <span>🌌</span> 星云图
+            </h2>
+            
+            <canvas id="nebula-canvas"></canvas>
+            
+            <div class="nebula-info">
+                当前星云: <span class="nebula-name" id="nebula-name">螺旋星云</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="instructions">
+        <h2>使用说明</h2>
+        <p>1. 允许浏览器访问您的摄像头</p>
+        <p>2. 将您的手放在摄像头前，确保光线充足</p>
+        <p>3. 使用上述手势控制星云图</p>
+        <p>4. 如果手势识别不准确，请尝试调整手与摄像头的距离和角度</p>
+    </div>
+
+    <script>
+        // 全局变量
+        let video;
+        let canvas;
+        let ctx;
+        let nebulaCanvas;
+        let nebulaCtx;
+        let model;
+        let predictions = [];
+        let isModelLoaded = false;
+        let lastGesture = '';
+        let gestureStartTime = 0;
+        
+        // 星云图相关变量
+        let nebulaScale = 1.0;
+        let currentNebula = 0;
+        const nebulaNames = ['螺旋星云', '猎户座星云', '蟹状星云', '猫眼星云', '创生之柱'];
+        let particles = [];
+        const particleCount = 1000;
+        
+        // 初始化函数
+        async function init() {
+            // 获取DOM元素
+            video = document.getElementById('video');
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+            nebulaCanvas = document.getElementById('nebula-canvas');
+            nebulaCtx = nebulaCanvas.getContext('2d');
+            
+            // 设置Canvas尺寸
+            setupCanvas();
+            window.addEventListener('resize', setupCanvas);
+            
+            // 初始化星云粒子
+            initNebula();
+            
+            // 加载手势识别模型
+            try {
+                updateStatus('正在加载手势识别模型...', false);
+                model = await handpose.load();
+                updateStatus('模型加载成功!', true);
+                isModelLoaded = true;
+                
+                // 启动摄像头
+                await setupCamera();
+                
+                // 开始检测手势
+                detectHand();
+                
+                // 开始动画循环
+                animateNebula();
+            } catch (error) {
+                console.error('初始化错误:', error);
+                updateStatus('初始化失败: ' + error.message, false);
+            }
+        }
+        
+        // 设置Canvas尺寸
+        function setupCanvas() {
+            // 视频Canvas
+            canvas.width = video.offsetWidth;
+            canvas.height = video.offsetHeight;
+            
+            // 星云Canvas
+            nebulaCanvas.width = nebulaCanvas.offsetWidth;
+            nebulaCanvas.height = nebulaCanvas.offsetHeight;
+        }
+        
+        // 初始化星云粒子
+        function initNebula() {
+            particles = [];
+            
+            for (let i = 0; i < particleCount; i++) {
+                particles.push({
+                    x: Math.random() * nebulaCanvas.width,
+                    y: Math.random() * nebulaCanvas.height,
+                    size: Math.random() * 3 + 1,
+                    speedX: (Math.random() - 0.5) * 0.5,
+                    speedY: (Math.random() - 0.5) * 0.5,
+                    color: `hsl(${Math.random() * 60 + 200}, 70%, ${Math.random() * 30 + 50}%)`,
+                    orbitX: nebulaCanvas.width / 2,
+                    orbitY: nebulaCanvas.height / 2,
+                    orbitRadius: Math.random() * 150 + 50,
+                    orbitSpeed: (Math.random() - 0.5) * 0.02,
+                    angle: Math.random() * Math.PI * 2
+                });
+            }
+        }
+        
+        // 设置摄像头
+        async function setupCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 } 
+                });
+                video.srcObject = stream;
+                
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        resolve();
+                    };
+                });
+            } catch (error) {
+                console.error('摄像头访问错误:', error);
+                updateStatus('无法访问摄像头: ' + error.message, false);
+                throw error;
+            }
+        }
+        
+        // 检测手势
+        async function detectHand() {
+            if (!isModelLoaded) return;
+            
+            try {
+                predictions = await model.estimateHands(video);
+                
+                // 绘制手部关键点
+                drawHand();
+                
+                // 分析手势
+                analyzeGesture();
+                
+                // 继续检测
+                requestAnimationFrame(detectHand);
+            } catch (error) {
+                console.error('手势检测错误:', error);
+                setTimeout(detectHand, 1000);
+            }
+        }
+        
+        // 绘制手部关键点
+        function drawHand() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (predictions.length > 0) {
+                for (let i = 0; i < predictions.length; i++) {
+                    const keypoints = predictions[i].landmarks;
+                    
+                    // 绘制关键点
+                    for (let j = 0; j < keypoints.length; j++) {
+                        const [x, y] = keypoints[j];
+                        
+                        ctx.beginPath();
+                        ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                        ctx.fillStyle = '#7e8ce0';
+                        ctx.fill();
+                    }
+                    
+                    // 绘制连接线
+                    drawConnections(keypoints, ctx);
+                }
+            }
+        }
+        
+        // 绘制手部连接线
+        function drawConnections(keypoints, ctx) {
+            const connections = [
+                [0, 1], [1, 2], [2, 3], [3, 4], // 拇指
+                [0, 5], [5, 6], [6, 7], [7, 8], // 食指
+                [0, 9], [9, 10], [10, 11], [11, 12], // 中指
+                [0, 13], [13, 14], [14, 15], [15, 16], // 无名指
+                [0, 17], [17, 18], [18, 19], [19, 20], // 小指
+                [0, 17] // 手掌
+            ];
+            
+            ctx.strokeStyle = '#7e8ce0';
+            ctx.lineWidth = 2;
+            
+            for (let i = 0; i < connections.length; i++) {
+                const [start, end] = connections[i];
+                const [x1, y1] = keypoints[start];
+                const [x2, y2] = keypoints[end];
+                
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            }
+        }
+        
+        // 分析手势
+        function analyzeGesture() {
+            if (predictions.length === 0) {
+                lastGesture = '';
+                return;
+            }
+            
+            const keypoints = predictions[0].landmarks;
+            
+            // 计算手部中心点
+            const centerX = keypoints.reduce((sum, kp) => sum + kp[0], 0) / keypoints.length;
+            const centerY = keypoints.reduce((sum, kp) => sum + kp[1], 0) / keypoints.length;
+            
+            // 计算手指尖到手掌的距离
+            const fingerTips = [4, 8, 12, 16, 20]; // 拇指、食指、中指、无名指、小指的指尖
+            const wrist = keypoints[0]; // 手腕
+            
+            let totalDistance = 0;
+            for (let i = 0; i < fingerTips.length; i++) {
+                const tip = keypoints[fingerTips[i]];
+                const distance = Math.sqrt(
+                    Math.pow(tip[0] - wrist[0], 2) + 
+                    Math.pow(tip[1] - wrist[1], 2)
+                );
+                totalDistance += distance;
+            }
+            const avgDistance = totalDistance / fingerTips.length;
+            
+            // 检测手势
+            const now = Date.now();
+            
+            // 握拳检测 (手指靠近手掌)
+            if (avgDistance < 70) {
+                if (lastGesture !== 'fist' && now - gestureStartTime > 500) {
+                    lastGesture = 'fist';
+                    gestureStartTime = now;
+                    zoomNebula(-0.2);
+                }
+            } 
+            // 手掌张开检测
+            else if (avgDistance > 100) {
+                if (lastGesture !== 'open' && now - gestureStartTime > 500) {
+                    lastGesture = 'open';
+                    gestureStartTime = now;
+                    zoomNebula(0.2);
+                }
+            }
+            // 滑动检测
+            else {
+                // 简单的手部移动检测
+                if (lastGesture === '') {
+                    lastGesture = 'tracking';
+                    gestureStartTime = now;
+                } else if (lastGesture === 'tracking' && now - gestureStartTime > 1000) {
+                    // 检测水平移动
+                    const thumbTip = keypoints[4];
+                    const pinkyTip = keypoints[20];
+                    
+                    // 如果手是横向的
+                    if (Math.abs(thumbTip[1] - pinkyTip[1]) < 50) {
+                        if (thumbTip[0] < pinkyTip[0]) {
+                            // 拇指在左，小指在右 - 向左滑动
+                            lastGesture = 'swipe_left';
+                            gestureStartTime = now;
+                            changeNebula(-1);
+                        } else {
+                            // 拇指在右，小指在左 - 向右滑动
+                            lastGesture = 'swipe_right';
+                            gestureStartTime = now;
+                            changeNebula(1);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 缩放星云图
+        function zoomNebula(delta) {
+            nebulaScale += delta;
+            nebulaScale = Math.max(0.5, Math.min(3, nebulaScale));
+            
+            // 更新星云粒子大小
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].size = Math.random() * 3 * nebulaScale + 1;
+            }
+        }
+        
+        // 切换星云
+        function changeNebula(direction) {
+            currentNebula += direction;
+            if (currentNebula < 0) currentNebula = nebulaNames.length - 1;
+            if (currentNebula >= nebulaNames.length) currentNebula = 0;
+            
+            document.getElementById('nebula-name').textContent = nebulaNames[currentNebula];
+            
+            // 重新初始化星云粒子
+            initNebula();
+        }
+        
+        // 动画星云
+        function animateNebula() {
+            nebulaCtx.fillStyle = 'rgba(10, 10, 30, 0.1)';
+            nebulaCtx.fillRect(0, 0, nebulaCanvas.width, nebulaCanvas.height);
+            
+            // 更新和绘制粒子
+            for (let i = 0; i < particles.length; i++) {
+                const p = particles[i];
+                
+                // 根据当前星云类型更新粒子行为
+                switch(currentNebula) {
+                    case 0: // 螺旋星云
+                        p.angle += p.orbitSpeed;
+                        p.x = p.orbitX + Math.cos(p.angle) * p.orbitRadius * nebulaScale;
+                        p.y = p.orbitY + Math.sin(p.angle) * p.orbitRadius * nebulaScale;
+                        p.orbitRadius += 0.05;
+                        break;
+                    case 1: // 猎户座星云
+                        p.x += p.speedX;
+                        p.y += p.speedY;
+                        
+                        if (p.x < 0 || p.x > nebulaCanvas.width) p.speedX *= -1;
+                        if (p.y < 0 || p.y > nebulaCanvas.height) p.speedY *= -1;
+                        break;
+                    case 2: // 蟹状星云
+                        p.angle += p.orbitSpeed;
+                        p.x = p.orbitX + Math.cos(p.angle) * p.orbitRadius * nebulaScale;
+                        p.y = p.orbitY + Math.sin(p.angle) * p.orbitRadius * nebulaScale;
+                        p.orbitRadius -= 0.02;
+                        if (p.orbitRadius < 10) p.orbitRadius = 150;
+                        break;
+                    case 3: // 猫眼星云
+                        p.x += p.speedX * nebulaScale;
+                        p.y += p.speedY * nebulaScale;
+                        
+                        if (p.x < 0 || p.x > nebulaCanvas.width) p.speedX *= -1;
+                        if (p.y < 0 || p.y > nebulaCanvas.height) p.speedY *= -1;
+                        
+                        // 向中心点移动
+                        const dx = p.orbitX - p.x;
+                        const dy = p.orbitY - p.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        p.x += dx / dist * 0.5;
+                        p.y += dy / dist * 0.5;
+                        break;
+                    case 4: // 创生之柱
+                        p.x += p.speedX;
+                        p.y += p.speedY * 2;
+                        
+                        if (p.y > nebulaCanvas.height) {
+                            p.y = 0;
+                            p.x = Math.random() * nebulaCanvas.width;
+                        }
+                        break;
+                }
+                
+                // 绘制粒子
+                nebulaCtx.beginPath();
+                nebulaCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                nebulaCtx.fillStyle = p.color;
+                nebulaCtx.fill();
+            }
+            
+            requestAnimationFrame(animateNebula);
+        }
+        
+        // 更新状态
+        function updateStatus(message, isSuccess) {
+            const statusDot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            
+            statusText.textContent = message;
+            
+            if (isSuccess) {
+                statusDot.classList.add('active');
+            } else {
+                statusDot.classList.remove('active');
+            }
+        }
+        
+        // 页面加载完成后初始化
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

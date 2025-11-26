@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>手势控制星云图 (Three.js + MediaPipe)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+        #video-container { position: absolute; bottom: 20px; right: 20px; z-index: 2; width: 320px; height: 240px; border-radius: 10px; overflow: hidden; border: 2px solid rgba(255,255,255,0.3); transform: scaleX(-1); /* 镜像翻转视频 */ }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-family: sans-serif; font-size: 24px; pointer-events: none; z-index: 10; }
+        .instruction { position: absolute; top: 20px; left: 20px; color: rgba(255,255,255,0.7); font-family: sans-serif; z-index: 3; pointer-events: none; }
+    </style>
+    <!-- 引入 MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <!-- 引入 Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div id="loading">正在加载模型和摄像头...</div>
+    <div class="instruction">
+        <h3>手势控制指南：</h3>
+        <p>👌 <b>双指捏合/张开</b>：拇指与食指距离控制星云大小</p>
+        <p>👋 <b>挥手 (左右滑动)</b>：手掌向左/向右快速移动切换星云形状</p>
+    </div>
+
+    <div id="video-container">
+        <video class="input_video"></video>
+    </div>
+    <div id="canvas-container"></div>
+
+<script>
+    // ================= THREE.JS 星云设置 =================
+    let scene, camera, renderer, particles;
+    let currentShapeIndex = 0;
+    const shapes = ['galaxy', 'tunnel', 'sphere']; // 三种形状
+    
+    function initThree() {
+        const container = document.getElementById('canvas-container');
+        scene = new THREE.Scene();
+        // 添加一点雾气增加深邃感
+        scene.fog = new THREE.FogExp2(0x000000, 0.001);
+
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 50;
+
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+
+        createParticles(shapes[currentShapeIndex]);
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animateThree();
+    }
+
+    function createParticles(type) {
+        if (particles) scene.remove(particles);
+
+        const geometry = new THREE.BufferGeometry();
+        const count = 5000;
+        const positions = new Float32Array(count * 3);
+        const colors = new Float32Array(count * 3);
+
+        const color1 = new THREE.Color(0x00ffff); // 青色
+        const color2 = new THREE.Color(0xff00ff); // 紫色
+
+        for (let i = 0; i < count; i++) {
+            let x, y, z;
+            
+            if (type === 'galaxy') {
+                // 螺旋星系
+                const branchAngle = (i % 3) * ((2 * Math.PI) / 3);
+                const radius = Math.random() * 30;
+                const spinAngle = radius * 1; 
+                
+                const randomX = Math.pow(Math.random(), 3) * (Math.random() < 0.5 ? 1 : -1) * 2;
+                const randomY = Math.pow(Math.random(), 3) * (Math.random() < 0.5 ? 1 : -1) * 2;
+                const randomZ = Math.pow(Math.random(), 3) * (Math.random() < 0.5 ? 1 : -1) * 2;
+
+                x = Math.cos(branchAngle + spinAngle) * radius + randomX;
+                y = randomY * 2; // 扁平一点
+                z = Math.sin(branchAngle + spinAngle) * radius + randomZ;
+            } else if (type === 'tunnel') {
+                // 时空隧道
+                const angle = Math.random() * Math.PI * 2;
+                const radius = 10 + Math.random() * 20;
+                const depth = (Math.random() - 0.5) * 100;
+                x = Math.cos(angle) * radius;
+                y = Math.sin(angle) * radius;
+                z = depth;
+            } else {
+                // 混乱球体
+                const r = 30 * Math.cbrt(Math.random());
+                const theta = Math.random() * 2 * Math.PI;
+                const phi = Math.acos(2 * Math.random() - 1);
+                x = r * Math.sin(phi) * Math.cos(theta);
+                y = r * Math.sin(phi) * Math.sin(theta);
+                z = r * Math.cos(phi);
+            }
+
+            positions[i * 3] = x;
+            positions[i * 3 + 1] = y;
+            positions[i * 3 + 2] = z;
+
+            // 混合颜色
+            const mixedColor = color1.clone().lerp(color2, Math.random());
+            colors[i * 3] = mixedColor.r;
+            colors[i * 3 + 1] = mixedColor.g;
+            colors[i * 3 + 2] = mixedColor.b;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        // 创建发光材质
+        const material = new THREE.PointsMaterial({
+            size: 0.5,
+            vertexColors: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            transparent: true,
+            opacity: 0.8
+        });
+
+        particles = new THREE.Points(geometry, material);
+        scene.add(particles);
+    }
+
+    function animateThree() {
+        requestAnimationFrame(animateThree);
+        
+        if (particles) {
+            particles.rotation.y += 0.002; // 自动缓慢旋转
+            
+            // 如果是隧道模式，增加飞行的感觉
+            if (shapes[currentShapeIndex] === 'tunnel') {
+                particles.rotation.z += 0.001;
+            }
+        }
+        renderer.render(scene, camera);
+    }
+
+    // ================= MEDIAPIPE 手势识别 =================
+    
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    let lastPalmX = null;
+    let swipeCooldown = false;
+    const SWIPE_THRESHOLD = 0.15; // 滑动灵敏度
+
+    function onResults(results) {
+        document.getElementById('loading').style.display = 'none';
+        
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const landmarks = results.multiHandLandmarks[0];
+
+            // 1. 缩放控制 (拇指 Tip: 4, 食指 Tip: 8)
+            const thumbTip = landmarks[4];
+            const indexTip = landmarks[8];
+            
+            // 计算两指之间的欧几里得距离
+            const distance = Math.sqrt(
+                Math.pow(thumbTip.x - indexTip.x, 2) + 
+                Math.pow(thumbTip.y - indexTip.y, 2)
+            );
+
+            // 映射距离到星云缩放 (距离通常在 0.02 到 0.3 之间)
+            // 我们希望手指张开(dist大) -> 放大(scale大)
+            // 手指捏合(dist小) -> 缩小(scale小)
+            const scale = Math.max(0.1, Math.min(3.0, distance * 5)); 
+            
+            // 平滑过渡
+            if (particles) {
+                particles.scale.set(scale, scale, scale);
+            }
+
+            // 2. 切换形状 (手掌中心: 0 或 9)
+            const palmX = landmarks[9].x; // 使用中指根部作为手掌中心参考
+            
+            if (lastPalmX !== null && !swipeCooldown) {
+                const deltaX = palmX - lastPalmX;
+
+                // 注意：MediaPipe x坐标是归一化的 [0, 1]，且视频通常是镜像的
+                // 向左滑 (deltaX < 负阈值) 或 向右滑 (deltaX > 正阈值)
+                if (Math.abs(deltaX) > SWIPE_THRESHOLD) {
+                    // 触发切换
+                    if (deltaX > 0) {
+                        // 往右滑 (实际上因为镜像是往左) -> 上一个
+                        currentShapeIndex = (currentShapeIndex + 1) % shapes.length;
+                    } else {
+                        // 往左滑 -> 下一个
+                        currentShapeIndex = (currentShapeIndex - 1 + shapes.length) % shapes.length;
+                    }
+                    
+                    createParticles(shapes[currentShapeIndex]);
+                    
+                    // 冷却时间，防止一次滑动触发多次切换
+                    swipeCooldown = true;
+                    setTimeout(() => { swipeCooldown = false; }, 1000);
+                }
+            }
+            lastPalmX = palmX;
+
+        } else {
+            // 如果没有检测到手，重置状态
+            lastPalmX = null;
+        }
+    }
+
+    const hands = new Hands({locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+
+    hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
+
+    hands.onResults(onResults);
+
+    const cameraMedia = new Camera(videoElement, {
+        onFrame: async () => {
+            await hands.send({image: videoElement});
+        },
+        width: 320,
+        height: 240
+    });
+
+    // 启动程序
+    initThree();
+    cameraMedia.start();
+
+</script>
+</body>
+</html>
